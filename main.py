@@ -1,6 +1,8 @@
 import os
+import time
 import requests
 import google.genai as genai
+from google.genai.errors import ServerError
 
 # Fetch Secrets
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -29,7 +31,6 @@ def send_telegram_alert(message):
 def process_trading_strategy_mondy():
     print("Initializing Trading strategy Mondy Engine...")
     
-    # Initialize Gemini AI Client
     client = genai.Client(api_key=GEMINI_KEY)
     
     prompt = """
@@ -39,12 +40,24 @@ def process_trading_strategy_mondy():
     Keep it concise, structured, and ready for Telegram Markdown.
     """
     
-    response = client.models.generate_content(
-        model='gemini-3.8-flash',
-        contents=prompt,
-    )
-    
-    alert_text = f"📈 *TRADER MONDY: PRE-MARKET RADAR*\n──────────────────────────────────\n{response.text}"
+    # Retry loop to handle temporary 503 high demand spikes
+    max_retries = 3
+    for attempt in range(1, max_retries + 1):
+        try:
+            print(f"Calling Gemini API (Attempt {attempt}/{max_retries})...")
+            response = client.models.generate_content(
+                model='gemini-3.8-flash',
+                contents=prompt,
+            )
+            ai_content = response.text
+            break
+        except ServerError as e:
+            if attempt == max_retries:
+                raise e
+            print(f"Server busy (503). Retrying in 10 seconds...")
+            time.sleep(10)
+
+    alert_text = f"📈 *TRADER MONDY: PRE-MARKET RADAR*\n──────────────────────────────────\n{ai_content}"
     send_telegram_alert(alert_text)
     print("Pre-market radar alert sent successfully to Telegram!")
 

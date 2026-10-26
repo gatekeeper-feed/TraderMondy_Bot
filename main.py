@@ -36,8 +36,8 @@ def process_trading_strategy_mondy():
     Keep it concise, structured, and ready for Telegram Markdown.
     """
     
-    # Direct Gemini REST API endpoint (No heavy SDK/httpx connection drops)
-    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
+    # Corrected endpoint using gemini-3.8-flash
+    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={GEMINI_KEY}"
     payload = {
         "contents": [{
             "parts": [{"text": prompt}]

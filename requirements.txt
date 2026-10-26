@@ -1,4 +1,1 @@
 requests
-google-genai
-pandas
-ta

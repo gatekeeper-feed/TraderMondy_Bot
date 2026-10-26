@@ -1,8 +1,6 @@
 import os
 import time
 import requests
-import google.genai as genai
-from google.genai.errors import ServerError
 
 # Fetch Secrets
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -31,8 +29,6 @@ def send_telegram_alert(message):
 def process_trading_strategy_mondy():
     print("Initializing Trading strategy Mondy Engine...")
     
-    client = genai.Client(api_key=GEMINI_KEY)
-    
     prompt = """
     You are the automated Trading Intelligence Engine for Trader Mondy (@tradermondy).
     Generate a formatted Pre-Market Radar & Confirmation Analysis for today based on Trading strategy Mondy.
@@ -40,22 +36,35 @@ def process_trading_strategy_mondy():
     Keep it concise, structured, and ready for Telegram Markdown.
     """
     
-    # Retry loop to handle temporary 503 high demand spikes
+    # Direct Gemini REST API endpoint (No heavy SDK/httpx connection drops)
+    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
+    payload = {
+        "contents": [{
+            "parts": [{"text": prompt}]
+        }]
+    }
+    
     max_retries = 3
+    ai_content = None
+    
     for attempt in range(1, max_retries + 1):
         try:
             print(f"Calling Gemini API (Attempt {attempt}/{max_retries})...")
-            response = client.models.generate_content(
-                model='gemini-3.8-flash',
-                contents=prompt,
-            )
-            ai_content = response.text
-            break
-        except ServerError as e:
+            response = requests.post(api_url, json=payload, timeout=30)
+            data = response.json()
+            
+            if "candidates" in data:
+                ai_content = data["candidates"][0]["content"]["parts"][0]["text"]
+                break
+            else:
+                print(f"API Response Error: {data}")
+                if attempt == max_retries:
+                    raise Exception(f"Gemini API Error: {data}")
+        except Exception as e:
+            print(f"Attempt {attempt} failed: {e}")
             if attempt == max_retries:
                 raise e
-            print(f"Server busy (503). Retrying in 10 seconds...")
-            time.sleep(10)
+            time.sleep(5)
 
     alert_text = f"📈 *TRADER MONDY: PRE-MARKET RADAR*\n──────────────────────────────────\n{ai_content}"
     send_telegram_alert(alert_text)

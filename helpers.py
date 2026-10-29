@@ -100,20 +100,22 @@ def ask_gemini(prompt):
         return None
     attempts = [
         ("gemini-2.5-flash", True),
-        ("gemini-2.5-flash", False),
         ("gemini-2.5-flash-lite", True),
+        ("gemini-2.5-flash", False),
         ("gemini-flash-latest", False),
     ]
+    errors = []
     for model, quick in attempts:
+        short = model.replace("gemini-", "")
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
         body = {
             "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"maxOutputTokens": 6000},
+            "generationConfig": {"maxOutputTokens": 3000},
         }
         if quick:
             body["generationConfig"]["thinkingConfig"] = {"thinkingBudget": 0}
         try:
-            r = requests.post(url, headers={"x-goog-api-key": GEMINI_KEY}, json=body, timeout=60)
+            r = requests.post(url, headers={"x-goog-api-key": GEMINI_KEY}, json=body, timeout=90)
             data = r.json()
             cands = data.get("candidates")
             if cands:
@@ -121,14 +123,15 @@ def ask_gemini(prompt):
                 text = "".join(p.get("text", "") for p in parts).strip()
                 if text:
                     return re.sub(r"[*_`#]", "", text).strip()
-                GEM["err"] = f"{model}: empty answer ({cands[0].get('finishReason')})"
+                errors.append(f"{short}: empty ({cands[0].get('finishReason')})")
             else:
                 err = data.get("error", {})
-                GEM["err"] = f"{model}: HTTP {r.status_code} {err.get('message') or data.get('promptFeedback') or ''}"
+                msg = str(err.get("message") or data.get("promptFeedback") or "")[:60]
+                errors.append(f"{short}: HTTP {r.status_code} {msg}")
         except Exception as e:
-            GEM["err"] = f"{model}: {type(e).__name__}"
-        GEM["err"] = GEM["err"][:200]
-        print("Gemini failed ->", GEM["err"])
+            errors.append(f"{short}: {type(e).__name__}")
+        GEM["err"] = " | ".join(errors)[:400]
+        print("Gemini failed ->", errors[-1])
         time.sleep(3)
     return None
 

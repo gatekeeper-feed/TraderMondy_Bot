@@ -92,28 +92,21 @@ def send_telegram(text):
 
 
 GEM = {"err": ""}
+GEMINI_MODELS = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.1-flash-lite", "gemini-3.5-flash-lite"]
 
 
 def ask_gemini(prompt):
     if not GEMINI_KEY:
         GEM["err"] = "no API key"
         return None
-    attempts = [
-        ("gemini-2.5-flash", True),
-        ("gemini-2.5-flash-lite", True),
-        ("gemini-2.5-flash", False),
-        ("gemini-flash-latest", False),
-    ]
     errors = []
-    for model, quick in attempts:
+    for model in GEMINI_MODELS:
         short = model.replace("gemini-", "")
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
         body = {
             "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"maxOutputTokens": 3000},
+            "generationConfig": {"maxOutputTokens": 8000},
         }
-        if quick:
-            body["generationConfig"]["thinkingConfig"] = {"thinkingBudget": 0}
         try:
             r = requests.post(url, headers={"x-goog-api-key": GEMINI_KEY}, json=body, timeout=90)
             data = r.json()

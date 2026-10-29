@@ -1,4 +1,35 @@
-if ok < 5:
+from helpers import *
+from signals import run_signals
+
+
+# ---------- Indian market pre / post market reports ----------
+def build_snapshot():
+    rows, pivots = [], []
+    for name, sym in SYMS.items():
+        d = yahoo(sym, "1d", "10d")
+        if len(d) < 2:
+            rows.append(f"{name}: data unavailable")
+            continue
+        last, prev = d[-1], d[-2]
+        chg = (last["c"] / prev["c"] - 1) * 100
+        rows.append(f"{name}: {last['c']:,.2f} ({chg:+.2f}%)")
+        if name in ("Nifty 50", "Sensex", "Bank Nifty"):
+            h, l, c = last["h"], last["l"], last["c"]
+            pp = (h + l + c) / 3
+            day = datetime.fromtimestamp(last["t"], IST).strftime("%d %b")
+            pivots.append(
+                f"{name} levels from {day} session (High {h:,.0f}, Low {l:,.0f}, Close {c:,.0f}): "
+                f"S2 {pp - (h - l):,.0f} | S1 {2 * pp - h:,.0f} | Pivot {pp:,.0f} | "
+                f"R1 {2 * pp - l:,.0f} | R2 {pp + (h - l):,.0f}"
+            )
+    return rows, pivots
+
+
+def run_report(kind):
+    state = load_state()
+    rows, pivots = build_snapshot()
+    ok = sum(1 for r in rows if "unavailable" not in r)
+    if ok < 5:
         send_telegram(f"⚠️ TRADER MONDY: {kind.upper()} report skipped. Market data sources are not responding right now. No numbers were made up.")
         save_state(state)
         return
@@ -48,7 +79,7 @@ if ok < 5:
     if ai:
         body = ai
     else:
-        body = f"⚠️ AI analysis unavailable right now ({LAST_GEMINI_ERROR}). Raw data:\n\n" + "\n".join(rows) + "\n\n" + "\n".join(pivots)
+        body = f"⚠️ AI analysis unavailable right now ({GEM['err']}). Raw data:\n\n" + "\n".join(rows) + "\n\n" + "\n".join(pivots)
     if send_telegram(header + body):
         state["last_" + kind] = now_ist().strftime("%Y-%m-%d")
         print(f"{kind} report sent")

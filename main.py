@@ -99,28 +99,71 @@ def run_report(kind):
 
 
 # ---------- Breaking news watch ----------
+def build_news_prompt(headline):
+    return (
+        "You are the market analyst for the Telegram channel Trader Mondy. A news headline just broke.\n"
+        f"HEADLINE: {headline}\n"
+        f"Current time: {stamp()}.\n"
+        "The channel follows Bitcoin, Ethereum, Gold, Silver, Nifty 50, Sensex and Bank Nifty.\n"
+        "RULES: use only the headline and well-known market logic. Never invent numbers, prices or facts that are not in the headline. "
+        "Plain text only: no markdown symbols (* _ # `), no links. Maximum 900 characters. Be specific, not generic.\n"
+        "Write exactly this layout:\n"
+        "⚡ DIRECT IMPACT: one or two lines on what this hits first and why it matters.\n"
+        "📊 DIRECTION:\n"
+        "Bitcoin: Bullish/Bearish/Neutral - short reason\n"
+        "Ethereum: Bullish/Bearish/Neutral - short reason\n"
+        "Gold: Bullish/Bearish/Neutral - short reason\n"
+        "Silver: Bullish/Bearish/Neutral - short reason\n"
+        "Nifty and Sensex: Bullish/Bearish/Neutral - short reason\n"
+        "Bank Nifty: Bullish/Bearish/Neutral - short reason\n"
+        "🔗 KNOCK-ON EFFECTS: two or three short lines on the chain reaction into the related markets.\n"
+        "⏳ TIMEFRAME: Intraday, 1-2 days or Longer, plus the one level or event to watch."
+    )
+
+
 def run_news_watch():
     state = load_state()
     first_run = "seen_news" not in state
     seen = list(state.get("seen_news", []))
+    now = now_ist()
+
+    # remember which topics were alerted in the last 6 hours (stops repeat alerts on the same story)
+    topics = {}
+    for k, v in state.get("seen_topics", {}).items():
+        try:
+            if (now - datetime.fromisoformat(v)).total_seconds() < 6 * 3600:
+                topics[k] = v
+        except Exception:
+            pass
+
     fresh = [i for i in fetch_breaking() if i["id"] not in seen]
     if first_run:
         seen += [i["id"] for i in fresh]
         print(f"First run: remembered {len(fresh)} headlines, no alerts sent")
     else:
-        for i in fresh[:3]:
-            view = ask_gemini(
-                f"Headline: {i['title']}\n"
-                "In 3 short plain-text lines, say the likely impact on Bitcoin, Gold and Nifty "
-                "(Bullish/Bearish/Neutral plus a few words). Use only the headline, invent no numbers. No markdown."
-            )
-            msg = f"🚨 BREAKING NEWS\n🕒 {stamp()}\n\n{i['title']}\nSource: {i['source']}\n{i['link']}"
+        sent = 0
+        for i in fresh:
+            topic = i.get("topic")
+            if topic and topic in topics:
+                seen.append(i["id"])
+                continue
+            if sent >= 3:
+                break
+            view = ask_gemini(build_news_prompt(i["title"]))
+            msg = f"🚨 BREAKING NEWS\n🕒 {stamp()}\n\n📰 {i['title']}\n\n"
             if view:
-                msg += f"\n\n{view}"
+                msg += view.strip()
+            else:
+                msg += "AI impact view is unavailable right now. Treat this headline with caution."
             msg += "\n\nEducational only, not investment advice."
             if send_telegram(msg):
                 seen.append(i["id"])
+                sent += 1
+                if topic:
+                    topics[topic] = now.isoformat()
+
     state["seen_news"] = seen[-400:]
+    state["seen_topics"] = topics
     save_state(state)
 
 

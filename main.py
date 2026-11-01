@@ -3,7 +3,7 @@ import sys
 from datetime import datetime
 from helpers import *
 from signals import run_signals
-from news_engine import fetch_all_news  # Integrated enhanced news engine
+from news_engine import fetch_all_news, fetch_breaking
 
 
 # ---------- Indian market pre / post market reports ----------
@@ -41,12 +41,10 @@ def run_report(kind):
         return
 
     # --- ENHANCED NEWS INTEGRATION ---
-    # Pulls aggregated multi-source headlines (Crypto Exploits, Geopolitics, Macro & Equities)
     all_headlines = fetch_all_news()
     if all_headlines:
         news_text = "\n".join(f"- {t}" for t in all_headlines)
     else:
-        # Fallback to existing news method if news_engine returns empty
         heads = []
         for label, q in NEWS_QUERIES.items():
             items = news(q)
@@ -100,6 +98,32 @@ def run_report(kind):
     save_state(state)
 
 
+# ---------- Breaking news watch ----------
+def run_news_watch():
+    state = load_state()
+    first_run = "seen_news" not in state
+    seen = list(state.get("seen_news", []))
+    fresh = [i for i in fetch_breaking() if i["id"] not in seen]
+    if first_run:
+        seen += [i["id"] for i in fresh]
+        print(f"First run: remembered {len(fresh)} headlines, no alerts sent")
+    else:
+        for i in fresh[:3]:
+            view = ask_gemini(
+                f"Headline: {i['title']}\n"
+                "In 3 short plain-text lines, say the likely impact on Bitcoin, Gold and Nifty "
+                "(Bullish/Bearish/Neutral plus a few words). Use only the headline, invent no numbers. No markdown."
+            )
+            msg = f"🚨 BREAKING NEWS\n🕒 {stamp()}\n\n{i['title']}\nSource: {i['source']}\n{i['link']}"
+            if view:
+                msg += f"\n\n{view}"
+            msg += "\n\nEducational only, not investment advice."
+            if send_telegram(msg):
+                seen.append(i["id"])
+    state["seen_news"] = seen[-400:]
+    save_state(state)
+
+
 # ---------- Test mode ----------
 def run_test():
     lines = ["✅ Trader Mondy bot is connected.", f"🕒 {stamp()}", ""]
@@ -108,14 +132,16 @@ def run_test():
         lines.append(f"{asset} data: OK (last {fmt(c[-1]['c'])})" if c else f"{asset} data: FAILED")
     n = yahoo("^NSEI", "1d", "5d")
     lines.append(f"Nifty data: OK (last {fmt(n[-1]['c'])})" if n else "Nifty data: FAILED")
-    
-    # Check Enhanced News Engine Status
+
     enhanced_news = fetch_all_news()
     if enhanced_news:
         lines.append(f"News Engine: OK ({len(enhanced_news)} headlines fetched)")
     else:
         lines.append(f"News: OK ({len(news('Nifty Sensex'))} fallback headlines)" if news("Nifty Sensex") else "News: FAILED")
-        
+
+    breaking = fetch_breaking()
+    lines.append(f"Breaking-news watch: OK ({len(breaking)} matching headlines right now)")
+
     g = ask_gemini("Reply with the single word OK.")
     lines.append("Gemini AI: OK" if g else "Gemini AI: FAILED (check the API key)")
     send_telegram("\n".join(lines))
@@ -132,6 +158,8 @@ def decide_mode():
         return "premarket"
     if sch == "30 10 * * 1-5":
         return "postmarket"
+    if sch == "*/5 * * * *":
+        return "news"
     return "signals"
 
 
@@ -143,6 +171,8 @@ if __name__ == "__main__":
     print("Mode:", mode)
     if mode == "signals":
         run_signals()
+    elif mode == "news":
+        run_news_watch()
     elif mode in ("premarket", "postmarket"):
         run_report(mode)
     else:

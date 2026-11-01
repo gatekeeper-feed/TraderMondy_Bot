@@ -1,5 +1,9 @@
+import os
+import sys
+from datetime import datetime
 from helpers import *
 from signals import run_signals
+from news_engine import fetch_all_news  # Integrated enhanced news engine
 
 
 # ---------- Indian market pre / post market reports ----------
@@ -30,16 +34,26 @@ def run_report(kind):
     rows, pivots = build_snapshot()
     ok = sum(1 for r in rows if "unavailable" not in r)
     if ok < 5:
-        send_telegram(f"⚠️ TRADER MONDY: {kind.upper()} report skipped. Market data sources are not responding right now. No numbers were made up.")
+        send_telegram(
+            f"⚠️ TRADER MONDY: {kind.upper()} report skipped. Market data sources are not responding right now. No numbers were made up."
+        )
         save_state(state)
         return
 
-    heads = []
-    for label, q in NEWS_QUERIES.items():
-        items = news(q)
-        if items:
-            heads.append(f"[{label}]\n" + "\n".join(f"- {t}" for t in items))
-    news_text = "\n\n".join(heads) if heads else "No headlines available."
+    # --- ENHANCED NEWS INTEGRATION ---
+    # Pulls aggregated multi-source headlines (Crypto Exploits, Geopolitics, Macro & Equities)
+    all_headlines = fetch_all_news()
+    if all_headlines:
+        news_text = "\n".join(f"- {t}" for t in all_headlines)
+    else:
+        # Fallback to existing news method if news_engine returns empty
+        heads = []
+        for label, q in NEWS_QUERIES.items():
+            items = news(q)
+            if items:
+                heads.append(f"[{label}]\n" + "\n".join(f"- {t}" for t in items))
+        news_text = "\n\n".join(heads) if heads else "No headlines available."
+    # ---------------------------------
 
     if kind == "premarket":
         title = "PRE-MARKET RADAR"
@@ -94,7 +108,14 @@ def run_test():
         lines.append(f"{asset} data: OK (last {fmt(c[-1]['c'])})" if c else f"{asset} data: FAILED")
     n = yahoo("^NSEI", "1d", "5d")
     lines.append(f"Nifty data: OK (last {fmt(n[-1]['c'])})" if n else "Nifty data: FAILED")
-    lines.append(f"News: OK ({len(news('Nifty Sensex'))} headlines)" if news("Nifty Sensex") else "News: FAILED")
+    
+    # Check Enhanced News Engine Status
+    enhanced_news = fetch_all_news()
+    if enhanced_news:
+        lines.append(f"News Engine: OK ({len(enhanced_news)} headlines fetched)")
+    else:
+        lines.append(f"News: OK ({len(news('Nifty Sensex'))} fallback headlines)" if news("Nifty Sensex") else "News: FAILED")
+        
     g = ask_gemini("Reply with the single word OK.")
     lines.append("Gemini AI: OK" if g else "Gemini AI: FAILED (check the API key)")
     send_telegram("\n".join(lines))

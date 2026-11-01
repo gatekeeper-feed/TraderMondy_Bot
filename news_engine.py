@@ -143,10 +143,15 @@ def fetch_breaking():
     result, ids = [], set()
     for it in items:
         t = it["title"].lower()
-        if not any(re.search(p, t) for p in HIGH_PATTERNS):
+        hi = next((n for n, p in enumerate(HIGH_PATTERNS) if re.search(p, t)), None)
+        if hi is None:
             continue
-        if not any(re.search(p, t) for p in ASSET_PATTERNS):
+        idxs = [n for n, p in enumerate(ASSET_PATTERNS) if re.search(p, t)]
+        if not idxs:
             continue
+        a = min(idxs)
+        grp = "crypto" if a <= 7 else "metals" if a <= 9 else "oil" if a <= 12 else "india" if a <= 15 else "global"
+        it["topic"] = f"{grp}|{hi}"
         key = hashlib.md5(re.sub(r"\W+", " ", t).strip()[:80].encode()).hexdigest()[:12]
         if key in ids:
             continue

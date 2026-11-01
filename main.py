@@ -158,7 +158,7 @@ def decide_mode():
         return "premarket"
     if sch == "30 10 * * 1-5":
         return "postmarket"
-    if sch == "*/5 * * * *":
+    if sch == "2-59/5 * * * *":
         return "news"
     return "signals"
 
